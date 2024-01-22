@@ -1,4 +1,5 @@
 import json
+from time import sleep
 from collections import OrderedDict
 from typing import Tuple, Any
 
@@ -109,7 +110,9 @@ def generate_btc_multisig_keeper(log=None) -> Tuple[OrderedDict, Keeper]:
     print(json.dumps(res, indent=4))
 
     service.rpc.addmultisigaddress(2, pub_keys, "keeper", "p2sh-segwit" if is_segwit else "legacy")
+    sleep(10)
     service.rpc.importaddress(address, "keeper", False)
+    sleep(10)
     if log:
         log.info('Keeper address sucessfully imported to node')
 
