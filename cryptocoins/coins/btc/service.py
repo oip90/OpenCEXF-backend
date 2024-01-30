@@ -1,3 +1,4 @@
+import time
 from collections import defaultdict
 from decimal import Decimal
 
@@ -55,6 +56,7 @@ class BTCCoinService(BitCoreCoinServiceBase):
         # need to fill chargeback amount later
         tx_outputs[keeper_wallet.address] = 0
 
+      try:
         estimated_tx_size = self.get_multi_tx_size(
             self.prepare_inputs(keeper_unspent),
             self.prepare_outs(tx_outputs),
@@ -75,7 +77,7 @@ class BTCCoinService(BitCoreCoinServiceBase):
             raise CoinServiceError('Unable to process withdrawals, chargeback after fee less than 0')
 
         tx_outputs[keeper_wallet.address] = chargeback_amount
-
+        time.sleep(10) #Задержка в случае медленной ноды
         return self.multi_transfer(
             inputs=self.prepare_inputs(keeper_unspent),
             outputs=self.prepare_outs(tx_outputs),
@@ -83,6 +85,17 @@ class BTCCoinService(BitCoreCoinServiceBase):
             private_key_s=private_key,
             redeem_script=keeper_wallet.redeem_script
         )
+      except CoinServiceError as coin_error:
+            self.log.error(f"Coin service error: {coin_error}")
+
+      except Exception as e:
+            self.log.exception(f"An unexpected error occurred: {e}")
+
+            # Попытка повторного вызова после паузы
+            self.log.info("Retrying API call after a pause...")
+            time.sleep(20)  # Можно использовать другое значение в секундах
+            return self.send_from_keeper(outputs, *args, **kwargs)
+        
 
     @staticmethod
     def prepare_outs(outs: dict) -> list:
