@@ -30,8 +30,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
     CRYPTO_COIN = Bitcoin()
 
     def get_transfer_fee(self, size):
-        # fee = to_decimal(size / 1000) * to_decimal(0.0002)
-        # return to_decimal(max(fee, self.const_fee))
         s_p_b = self.get_sat_per_byte()
         fee = to_decimal(size * s_p_b / 10 ** 8)
         self.log.info(f'Fee = {s_p_b} Sat/b * {size} bytes / 10**8 = {fee} BTC')
@@ -53,49 +51,44 @@ class BTCCoinService(BitCoreCoinServiceBase):
             else:
                 tx_outputs[item.address] = to_decimal(item.amount)
 
-        # need to fill chargeback amount later
         tx_outputs[keeper_wallet.address] = 0
 
         try:
-           estimated_tx_size = self.get_multi_tx_size(
-               self.prepare_inputs(keeper_unspent),
-               self.prepare_outs(tx_outputs),
-               keeper_wallet.private_key,
-               private_key,
-               keeper_wallet.redeem_script,
-           )
-           transfer_fee = self.get_transfer_fee(estimated_tx_size) 
+            estimated_tx_size = self.get_multi_tx_size(
+                self.prepare_inputs(keeper_unspent),
+                self.prepare_outs(tx_outputs),
+                keeper_wallet.private_key,
+                private_key,
+                keeper_wallet.redeem_script,
+            )
+            transfer_fee = self.get_transfer_fee(estimated_tx_size)
 
-           outputs_sum = sum(tx_outputs.values())
-           self.log.info('%s withdrawals outputs sum: %s', self.currency.code, outputs_sum)
+            outputs_sum = sum(tx_outputs.values())
+            self.log.info('%s withdrawals outputs sum: %s', self.currency.code, outputs_sum)
 
-           chargeback_amount = keeper_balance - transfer_fee - outputs_sum   
-           self.log.info('%s chargeback amount: %s', self.currency.code, chargeback_amount)
+            chargeback_amount = keeper_balance - transfer_fee - outputs_sum
+            self.log.info('%s chargeback amount: %s', self.currency.code, chargeback_amount)
 
-           if chargeback_amount < 0:
-               self.log.error('Unable to process withdrawals, chargeback after fee less than 0')
-               raise CoinServiceError('Unable to process withdrawals, chargeback after fee less than 0')
+            if chargeback_amount < 0:
+                self.log.error('Unable to process withdrawals, chargeback after fee less than 0')
+                raise CoinServiceError('Unable to process withdrawals, chargeback after fee less than 0')
 
-           tx_outputs[keeper_wallet.address] = chargeback_amount
-           time.sleep(10) #Задержка в случае медленной ноды
-           return self.multi_transfer(
-               inputs=self.prepare_inputs(keeper_unspent),
-               outputs=self.prepare_outs(tx_outputs),
-               private_key=keeper_wallet.private_key,
-               private_key_s=private_key,
-               redeem_script=keeper_wallet.redeem_script
-           )
-       except CoinServiceError as coin_error:
-           self.log.error(f"Coin service error: {coin_error}")
-
-       except Exception as e:
-           self.log.exception(f"An unexpected error occurred: {e}")
-
-           # Попытка повторного вызова после паузы
-           self.log.info("Retrying API call after a pause...")
-           time.sleep(20)  # Можно использовать другое значение в секундах
-           return self.send_from_keeper(outputs, *args, **kwargs)
-        
+            tx_outputs[keeper_wallet.address] = chargeback_amount
+            time.sleep(10)  # Задержка в случае медленной ноды
+            return self.multi_transfer(
+                inputs=self.prepare_inputs(keeper_unspent),
+                outputs=self.prepare_outs(tx_outputs),
+                private_key=keeper_wallet.private_key,
+                private_key_s=private_key,
+                redeem_script=keeper_wallet.redeem_script
+            )
+        except CoinServiceError as coin_error:
+            self.log.error(f"Coin service error: {coin_error}")
+        except Exception as e:
+            self.log.exception(f"An unexpected error occurred: {e}")
+            self.log.info("Retrying API call after a pause...")
+            time.sleep(20)  # Можно использовать другое значение в секундах
+            return self.send_from_keeper(outputs, *args, **kwargs)
 
     @staticmethod
     def prepare_outs(outs: dict) -> list:
@@ -121,9 +114,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
         ]
 
     def multi_tx_sign(self, inputs: list, outputs: list, private_key: str, private_key_s: str, redeem_script: str):
-        """
-        make transaction and sign with two prv key
-        """
         tx_obj = self.crypto_coin.mktx(inputs, outputs)
 
         for i in range(0, len(tx_obj['ins'])):
@@ -141,20 +131,13 @@ class BTCCoinService(BitCoreCoinServiceBase):
         return serialize(tx_obj)
 
     def multi_transfer(self, inputs: list, outputs: list, private_key: str, private_key_s: str, redeem_script: str):
-        """
-        make transaction,sign with two prv key and send raw_tx
-        """
         self.log.info('Make transfer %s in -> %s out', len(inputs), len(outputs))
         raw_tx = self.multi_tx_sign(inputs, outputs, private_key, private_key_s, redeem_script)
         tx_id = self.rpc.sendrawtransaction(raw_tx)
         self.log.info('Sent TX: %s', tx_id)
-
         return tx_id
 
     def get_multi_tx_size(self, inputs: list, outputs: list, private_key: str, private_key_s: str, redeem_script: str):
-        """
-        get size raw_tx in bytes
-        """
         raw_tx = self.multi_tx_sign(inputs, outputs, private_key, private_key_s, redeem_script)
         tx_decode = self.rpc.decoderawtransaction(raw_tx)
         return tx_decode.get('size')
@@ -163,7 +146,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
         tx_id = tx_data['txid']
         outputs_amount = defaultdict(Decimal)
 
-        # get total amount for each address
         for addr, amount in self.parse_tx_outputs(tx_data):
             outputs_amount[addr] += amount
 
@@ -192,7 +174,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
                 accumulation_details.complete()
             accumulation_transaction.complete()
 
-        # process only our addresses
         for addr, amount in outputs_amount.items():
             if addr not in self.get_users_addresses():
                 continue
@@ -201,7 +182,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
                 self.log.info('Amount %s less than min deposit limit', amount)
                 continue
 
-            # self.process_deposit(tx_id, addr, amount)
             if ScoreManager.need_to_check_score(tx_id, addr, amount, self.currency.code):
                 defer_time = ScoringSettings.get_deffered_scoring_time(self.currency.code)
                 process_deffered_deposit.apply_async((tx_id, addr, amount, self.currency.code), queue='btc', countdown=defer_time)
@@ -210,11 +190,10 @@ class BTCCoinService(BitCoreCoinServiceBase):
                 self.process_deposit(tx_id, addr, amount)
 
     def accumulate_deposit(self, wallet_transaction, inputs_dict, private_keys_dict):
-        #private_keys = {}
         item = inputs_dict.get(wallet_transaction.tx_hash)
         if not item:
             return
-        #private_keys[item['txid'] + ':' + str(item['vout'])] = private_keys_dict[item['address']]
+
         private_keys_dict[item['txid'] + ':' + str(item['vout'])] = private_keys_dict[item['address']]
         total_amount = wallet_transaction.amount
 
@@ -222,7 +201,7 @@ class BTCCoinService(BitCoreCoinServiceBase):
         accumulation_amount = 0
 
         try:
-            tx_id, accumulation_amount = self.transfer_to([item], accumulation_address, total_amount,  private_keys_dict)
+            tx_id, accumulation_amount = self.transfer_to([item], accumulation_address, total_amount, private_keys_dict)
         except TransferAmountLowError:
             wallet_transaction.set_balance_too_low()
             tx_id = None
@@ -244,9 +223,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
         self.log.info(f'Accumulation to {accumulation_address} succeeded')
 
     def accumulate(self):
-        """
-        We need to check if tx is bad
-        """
         self.log.info('Starting accumulation: %s', self.currency.code)
 
         to_accumulate = self.get_accumulation_ready_wallet_transactions()
@@ -268,12 +244,12 @@ class BTCCoinService(BitCoreCoinServiceBase):
         ))
 
         private_keys_dict = {
-            address: AESCoderDecoder(settings.CRYPTO_KEY).decrypt(private_key) for address, private_key in private_keys_dict.items()
+            address: AESCoderDecoder(settings.CRYPTO_KEY).decrypt(private_key) for address, private_key in
+            private_keys_dict.items()
         }
 
         for wallet_transaction in to_accumulate:
             self.accumulate_deposit(wallet_transaction, inputs_dict, private_keys_dict)
-
 
         to_accumulate = self.get_external_accumulation_ready_wallet_transactions()
         to_accumulate_from_addresses = [w.wallet.address for w in to_accumulate]
@@ -294,12 +270,12 @@ class BTCCoinService(BitCoreCoinServiceBase):
         ))
 
         private_keys_dict = {
-            address: AESCoderDecoder(settings.CRYPTO_KEY).decrypt(private_key) for address, private_key in private_keys_dict.items()
+            address: AESCoderDecoder(settings.CRYPTO_KEY).decrypt(private_key) for address, private_key in
+            private_keys_dict.items()
         }
 
         for wallet_transaction in to_accumulate:
             self.accumulate_deposit(wallet_transaction, inputs_dict, private_keys_dict)
-
 
     def transfer(self, inputs: list, outputs: dict, private_keys: dict):
         self.log.info('Make transfer %s in -> %s out', len(inputs), len(outputs))
@@ -315,7 +291,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
         return tx_id
 
     def get_tx_size(self, inputs: list, outputs: dict, private_keys: dict):
-
         inputs = self.prepare_inputs(inputs)
         outputs = self.prepare_outs(outputs)
         tx_hex = self.crypto_coin.mktx(inputs, outputs)
@@ -326,7 +301,6 @@ class BTCCoinService(BitCoreCoinServiceBase):
         return tx_decode.get('size')
 
     def transfer_to(self, inputs: list, address_to: str, amount: Decimal, private_keys: dict) -> [str, Decimal]:
-
         pre_outputs = {
             address_to: amount
         }
