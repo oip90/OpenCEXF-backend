@@ -56,45 +56,45 @@ class BTCCoinService(BitCoreCoinServiceBase):
         # need to fill chargeback amount later
         tx_outputs[keeper_wallet.address] = 0
 
-      try:
-        estimated_tx_size = self.get_multi_tx_size(
-            self.prepare_inputs(keeper_unspent),
-            self.prepare_outs(tx_outputs),
-            keeper_wallet.private_key,
-            private_key,
-            keeper_wallet.redeem_script,
-        )
-        transfer_fee = self.get_transfer_fee(estimated_tx_size)
+        try:
+           estimated_tx_size = self.get_multi_tx_size(
+               self.prepare_inputs(keeper_unspent),
+               self.prepare_outs(tx_outputs),
+               keeper_wallet.private_key,
+               private_key,
+               keeper_wallet.redeem_script,
+           )
+           transfer_fee = self.get_transfer_fee(estimated_tx_size) 
 
-        outputs_sum = sum(tx_outputs.values())
-        self.log.info('%s withdrawals outputs sum: %s', self.currency.code, outputs_sum)
+           outputs_sum = sum(tx_outputs.values())
+           self.log.info('%s withdrawals outputs sum: %s', self.currency.code, outputs_sum)
 
-        chargeback_amount = keeper_balance - transfer_fee - outputs_sum
-        self.log.info('%s chargeback amount: %s', self.currency.code, chargeback_amount)
+           chargeback_amount = keeper_balance - transfer_fee - outputs_sum   
+           self.log.info('%s chargeback amount: %s', self.currency.code, chargeback_amount)
 
-        if chargeback_amount < 0:
-            self.log.error('Unable to process withdrawals, chargeback after fee less than 0')
-            raise CoinServiceError('Unable to process withdrawals, chargeback after fee less than 0')
+           if chargeback_amount < 0:
+               self.log.error('Unable to process withdrawals, chargeback after fee less than 0')
+               raise CoinServiceError('Unable to process withdrawals, chargeback after fee less than 0')
 
-        tx_outputs[keeper_wallet.address] = chargeback_amount
-        time.sleep(10) #Задержка в случае медленной ноды
-        return self.multi_transfer(
-            inputs=self.prepare_inputs(keeper_unspent),
-            outputs=self.prepare_outs(tx_outputs),
-            private_key=keeper_wallet.private_key,
-            private_key_s=private_key,
-            redeem_script=keeper_wallet.redeem_script
-        )
-      except CoinServiceError as coin_error:
-            self.log.error(f"Coin service error: {coin_error}")
+           tx_outputs[keeper_wallet.address] = chargeback_amount
+           time.sleep(10) #Задержка в случае медленной ноды
+           return self.multi_transfer(
+               inputs=self.prepare_inputs(keeper_unspent),
+               outputs=self.prepare_outs(tx_outputs),
+               private_key=keeper_wallet.private_key,
+               private_key_s=private_key,
+               redeem_script=keeper_wallet.redeem_script
+           )
+       except CoinServiceError as coin_error:
+           self.log.error(f"Coin service error: {coin_error}")
 
-      except Exception as e:
-            self.log.exception(f"An unexpected error occurred: {e}")
+       except Exception as e:
+           self.log.exception(f"An unexpected error occurred: {e}")
 
-            # Попытка повторного вызова после паузы
-            self.log.info("Retrying API call after a pause...")
-            time.sleep(20)  # Можно использовать другое значение в секундах
-            return self.send_from_keeper(outputs, *args, **kwargs)
+           # Попытка повторного вызова после паузы
+           self.log.info("Retrying API call after a pause...")
+           time.sleep(20)  # Можно использовать другое значение в секундах
+           return self.send_from_keeper(outputs, *args, **kwargs)
         
 
     @staticmethod
